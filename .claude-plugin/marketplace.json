@@ -1,0 +1,5 @@
+{
+  "name": "task-tracker",
+  "owner": { "name": "jongjunpark" },
+  "plugins": [{ "name": "task-tracker", "source": "./" }]
+}
