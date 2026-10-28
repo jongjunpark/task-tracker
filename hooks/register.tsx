@@ -10,7 +10,7 @@ const PANE = 'task-tracker'
 const PANE_TITLE = '작업 목록'
 const TOOL = 'tasks'
 const TOOL_FULL = 'mcp__task-tracker__tasks'
-const COMMAND = 'tasks'
+const COMMAND = 'task-tracker'
 
 const MAX_TASKS = 100
 const MAX_MESSAGES = 300
@@ -521,7 +521,7 @@ const runCommand = async ($: EngineInterface, args: string) => {
     return '작업 목록을 비웠습니다.'
   }
 
-  return '사용법: /tasks · /tasks done <번호> · /tasks drop <번호> · /tasks clear · /tasks reset'
+  return '사용법: /task-tracker · /task-tracker done <번호> · /task-tracker drop <번호> · /task-tracker clear · /task-tracker reset'
 }
 
 export const register: Register = on => {

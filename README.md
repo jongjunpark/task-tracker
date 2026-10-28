@@ -45,10 +45,10 @@ claude plugin install task-tracker --marketplace jongjunpark/task-tracker
 
 ## 명령
 
-- `/tasks` — 패널 열기
-- `/tasks done <번호>` · `/tasks drop <번호>` — 완료 · 취소 처리
-- `/tasks clear` — 완료·취소된 작업 정리
-- `/tasks reset` — 목록 비우기
+- `/task-tracker` — 패널 열기
+- `/task-tracker done <번호>` · `/task-tracker drop <번호>` — 완료 · 취소 처리
+- `/task-tracker clear` — 완료·취소된 작업 정리
+- `/task-tracker reset` — 목록 비우기
 
 ## 개발
 
