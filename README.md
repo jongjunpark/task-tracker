@@ -2,6 +2,8 @@
 
 한 세션에서 Claude 에게 시킨 작업이 여러 개 쌓일 때, 무엇을 시켰고 각각 어디까지 왔는지 보여 주는 Claude Code 플러그인.
 
+<img src="docs/panel.png" alt="데스크톱 앱의 작업 목록 패널" width="371">
+
 ## 설치
 
 터미널의 Claude Code 프롬프트에서:
@@ -41,7 +43,12 @@ claude plugin install task-tracker --marketplace jongjunpark/task-tracker
   - 안 끝난 작업에는 「작업 완료」·「작업 취소」 버튼
   - 완료·취소 묶음에는 「모두 삭제」, 끝난 작업 줄마다 휴지통(하나만 삭제)
 - 프롬프트 위 한 줄: 진행 중 작업 제목, 진행 막대, 상태별 개수, [목록] 버튼
+
+  <img src="docs/band.png" alt="입력창 위 한 줄" width="864">
+
 - 터미널에서는 그림 대신 글자로 그린다.
+
+  <img src="docs/terminal.png" alt="터미널의 작업 목록 패널과 입력창 위 한 줄" width="745">
 
 ## 명령
 

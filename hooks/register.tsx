@@ -849,9 +849,16 @@ export const register: Register = on => {
                       </Box>
                     )}
                     {/* 작업 완료·작업 취소는 요청 목록 아래 왼쪽에 둔다. plain 으로 글자 높이만 차지하고, 휴지통처럼 회색(dimColor)으로 둔다 */}
-                    {/* 버튼 줄은 왼쪽에 붙이고, 요청 목록과는 작은 간격을 둔다 */}
+                    {/* 버튼 줄은 왼쪽에 붙이고, 요청 목록과는 작은 간격을 둔다.
+                        터미널 글자 버튼은 그림 여백이 없어서 버튼 사이를 한 칸 띄우고 요청 목록과 같은 들여쓰기에서 시작한다 */}
                     {hasActions && (
-                      <Box flexDirection="row" justifyContent="flex-start" gap={0} marginTop="xs">
+                      <Box
+                        flexDirection="row"
+                        justifyContent="flex-start"
+                        gap={e.surface === 'terminal' ? 1 : 0}
+                        paddingLeft={e.surface === 'terminal' ? childInset : 0}
+                        marginTop="xs"
+                      >
                         {textButton(`done-${task.id}`, '작업 완료', () => setStatus($, task.id, 'done'))}
                         {textButton(`drop-${task.id}`, '작업 취소', () => setStatus($, task.id, 'dropped'))}
                       </Box>
