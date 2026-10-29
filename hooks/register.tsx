@@ -782,6 +782,8 @@ export const register: Register = on => {
     // 작업 아래 줄(지금 하는 일·요청)의 들여쓰기. 데스크톱 작업 제목은 버튼 앞 여백만큼 들어가 있어서,
     // 한 칸(1)보다 작은 데스크톱 간격 단계 sm 으로 제목 시작선에 가깝게 맞춘다. 터미널은 버튼 여백이 없어 1칸.
     const childInset = e.surface === 'terminal' ? 1 : 'sm'
+    // 요청 목록(처리됨 줄·체크박스)은 제목과 같은 선에 서면 제목에 딸린 줄로 안 보여서 데스크톱에서는 한 단계 더 깊게 들인다
+    const listInset = e.surface === 'terminal' ? childInset : 'lg'
 
     // 요청 표시: 처리됨은 초록 네모 체크, 남음은 빈 네모 (그림). 그림이 없는 터미널은 글자 ✓ / ☐
     const checkbox = (isDone: boolean) =>
@@ -875,7 +877,7 @@ export const register: Register = on => {
                       </Box>
                     )}
                     {isShown(task) && (
-                      <Box flexDirection="column" paddingLeft={childInset}>
+                      <Box flexDirection="column" paddingLeft={listInset}>
                         {/* 간격 단계(xs)는 원하는 것보다 넓어서 px 로 정한 투명 그림을 끼워 간격을 만든다.
                             제목과 첫 요청 사이는 요청끼리의 간격보다 좁지 않게 둔다. 터미널에는 그림이 없어 간격도 없다 */}
                         {spacer(TITLE_GAP_PX)}
