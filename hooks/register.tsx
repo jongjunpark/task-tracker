@@ -858,8 +858,8 @@ export const register: Register = on => {
                 // 요청 목록이 펼쳐진 작업은 다음 작업과 붙어 보이지 않게 아래에 간격을 둔다.
                 return (
                   <Box flexDirection="column" marginBottom={isShown(task) ? 'sm' : 0}>
-                    {/* 제목 버튼에 이미 오른쪽 여백이 있어서 제목과 진행 숫자 사이에는 간격을 따로 두지 않는다 */}
-                    <Box flexDirection="row" alignItems="center" gap={0}>
+                    {/* 번호(#N)는 버튼 밖이라 여백이 없다. 좁아져도 번호와 진행 숫자가 붙어 「#10/1」 처럼 읽히지 않게 간격을 둔다 */}
+                    <Box flexDirection="row" alignItems="center" gap={e.surface === 'terminal' ? 1 : 'sm'}>
                       {/* 제목을 누르면 요청 목록이 접히고 펼쳐진다.
                           제목이 줄어들고 막대는 줄어들지 않게 해서 막대가 잘리지 않게 한다 */}
                       {/* 데스크톱은 버튼 안 글자 색을 무시해서, 회색으로 그릴 번호(#N)는 버튼 밖에 둔다.
