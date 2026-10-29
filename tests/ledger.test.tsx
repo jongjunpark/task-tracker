@@ -77,7 +77,9 @@ test('분류한 작업이 패널과 밴드에 상태별로 보인다', async ($,
     expect(await pane.find({ type: 'Text', text: /^대기 1$/ })).toBeDefined()
     // 진행도는 작업에 붙은 요청 중 처리된 수
     expect((await pane.find({ type: 'Text', text: /^1\/2$/ }))?.text).toBe('1/2')
-    expect(await pane.find({ type: 'Text', text: /^빈 화면 버그$/ })).toBeDefined()
+    // 처리된 요청(빈 화면 버그)은 「처리됨 1개」 줄로 접히고 남은 요청만 보인다
+    expect(await pane.find({ key: 'resolved-1' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /^빈 화면 버그$/ })).toBeUndefined()
     expect(await pane.find({ type: 'Text', text: /^소셜 로그인 확인$/ })).toBeDefined()
     // 지금 하는 일(doing)은 모델용 목록에만 쓰고 패널에는 그리지 않는다
     expect(await pane.find({ type: 'Text', text: /재현 테스트 작성/ })).toBeUndefined()
@@ -301,5 +303,40 @@ test('작업 완료 버튼은 남은 요청까지 작업 전체를 완료로 옮
   expect(await pane.find({ type: 'Text', text: /^완료 1$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^진행 \d+$/ })).toBeUndefined()
   expect((await pane.find({ type: 'Text', text: /^2\/2$/ }))?.text).toBe('2/2')
+  await pane.unmount()
+})
+
+test('처리된 요청은 남은 요청이 있을 때 「처리됨 N개」 한 줄로 접히고, 누르면 펼쳐진다', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  on('prompt.submit', (_, e) => ({ text: e.text, context: e.context }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.prompt.submit(typed('로그인 버그 고쳐줘'))
+  await $.prompt.submit(typed('에러 문구도'))
+  await $.prompt.submit(typed('테스트도 추가'))
+  await $.tool.call({
+    tool: TOOL,
+    ops: [
+      { op: 'add', title: '로그인 버그', message: 1, summary: '로그인 버그 수정', status: 'now' },
+      { op: 'attach', message: 2, task: 1, summary: '에러 문구 수정' },
+      { op: 'attach', message: 3, task: 1, summary: '테스트 추가' },
+      { op: 'resolve', message: 1 },
+      { op: 'resolve', message: 2 },
+    ],
+  })
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await pane.find({ key: 'resolved-1' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^로그인 버그 수정$/ })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: /^테스트 추가$/ })).toBeDefined()
+
+  await pane.press({ key: 'resolved-1' })
+  expect(await pane.find({ type: 'Text', text: /^로그인 버그 수정$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^에러 문구 수정$/ })).toBeDefined()
+
+  // 전부 처리되면 접을 줄 없이 다 보인다
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'resolve', message: 3 }] })
+  expect(await pane.find({ key: 'resolved-1' })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: /^로그인 버그 수정$/ })).toBeDefined()
   await pane.unmount()
 })

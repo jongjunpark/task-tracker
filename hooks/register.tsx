@@ -26,6 +26,8 @@ const ledger = atom({ plugin: 'task-tracker', key: 'ledger' } as const, EMPTY, {
 const expanded = atom({ plugin: 'task-tracker', key: 'expanded' } as const, [])
 // 접힌 상태 묶음: 상태 이름, 분류 전은 'unsorted'
 const collapsed = atom({ plugin: 'task-tracker', key: 'collapsed' } as const, [])
+// 처리된 요청을 펼쳐 둔 작업 id. 기본은 처리된 요청을 「처리됨 N개」 한 줄로 접는다
+const resolvedShown = atom({ plugin: 'task-tracker', key: 'resolvedShown' } as const, [])
 
 const STATUSES: readonly TaskStatus[] = ['now', 'blocked', 'paused', 'waiting', 'done', 'dropped']
 
@@ -124,6 +126,18 @@ const TITLE_GAP_PX = 4
 
 const FOLD_DOWN_SVG = foldSvg('M1.5 3.2 Q1 2.5 1.8 2.5 H8.2 Q9 2.5 8.5 3.2 L5.6 7.3 Q5 8 4.4 7.3 Z')
 const FOLD_RIGHT_SVG = foldSvg('M3.2 1.5 Q2.5 1 2.5 1.8 V8.2 Q2.5 9 3.2 8.5 L7.3 5.6 Q8 5 7.3 4.4 Z')
+
+// 요청 목록 안의 「처리됨 N개」 접기 삼각형: 체크박스와 같은 폭(12)이라 체크박스 열에 맞춰 선다
+const ROW_FOLD_WIDTH = CHECKBOX_SIZE
+const ROW_FOLD_HEIGHT = 14
+const rowFoldSvg = (path: string) =>
+  [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${ROW_FOLD_WIDTH}" height="${ROW_FOLD_HEIGHT}" viewBox="0 0 ${ROW_FOLD_WIDTH} ${ROW_FOLD_HEIGHT}">`,
+    `<g transform="translate(1 2)"><path d="${path}" fill="#8E8E8E"/></g>`,
+    '</svg>',
+  ].join('')
+const ROW_FOLD_DOWN_SVG = rowFoldSvg('M1.5 3.2 Q1 2.5 1.8 2.5 H8.2 Q9 2.5 8.5 3.2 L5.6 7.3 Q5 8 4.4 7.3 Z')
+const ROW_FOLD_RIGHT_SVG = rowFoldSvg('M3.2 1.5 Q2.5 1 2.5 1.8 V8.2 Q2.5 9 3.2 8.5 L7.3 5.6 Q8 5 7.3 4.4 Z')
 
 // 선 휴지통(비우기)
 const TRASH_SVG = iconSvg(
@@ -474,6 +488,9 @@ const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: PANE_TITLE
 const toggle = ($: EngineInterface, id: number) =>
   update($, expanded, ids => (ids.includes(id) ? ids.filter(one => one !== id) : [...ids, id]))
 
+const toggleResolved = ($: EngineInterface, id: number) =>
+  update($, resolvedShown, ids => (ids.includes(id) ? ids.filter(one => one !== id) : [...ids, id]))
+
 const toggleFold = ($: EngineInterface, group: string) =>
   update($, collapsed, groups => (groups.includes(group) ? groups.filter(one => one !== group) : [...groups, group]))
 
@@ -620,6 +637,7 @@ export const register: Register = on => {
     const state = await read($, ledger)
     const open = await read($, expanded)
     const folded = await read($, collapsed)
+    const resolvedOpen = await read($, resolvedShown)
     const unsorted = state.messages.filter(isUnsorted)
 
     if (state.tasks.length === 0 && unsorted.length === 0) {
@@ -709,6 +727,27 @@ export const register: Register = on => {
         </Button>
       )
 
+    // 「처리됨 N개」 줄: 체크박스 열의 삼각형과 회색 글자 둘 다 눌러서 처리된 요청을 접고 편다.
+    // 터미널은 삼각형 글자 버튼과 글자 버튼으로 대신한다
+    const resolvedToggle = (task: Task, count: number, isFolded: boolean) => {
+      const onPress = () => toggleResolved($, task.id)
+
+      return (
+        <Box flexDirection="row" alignItems="center" gap={Svg ? 'xs' : 1}>
+          {iconButton(`resolved-icon-${task.id}`, isFolded ? ROW_FOLD_RIGHT_SVG : ROW_FOLD_DOWN_SVG, isFolded ? '펼치기' : '접기', onPress, {
+            width: ROW_FOLD_WIDTH,
+            height: ROW_FOLD_HEIGHT,
+            fillers: 1,
+          }) || (
+            <Button key={`resolved-icon-${task.id}`} plain dimColor onPress={onPress}>
+              {isFolded ? '\u25B6\uFE0E' : '\u25BC\uFE0E'}
+            </Button>
+          )}
+          {textButton(`resolved-${task.id}`, `처리됨 ${count}개`, onPress)}
+        </Box>
+      )
+    }
+
     // 묶음 전체 삭제는 글자 버튼 「모두 삭제」, 작업 하나 삭제는 작업 줄 끝의 휴지통
     const clearButton = (group: string, onClear: () => void) => textButton(`clear-${group}`, '모두 삭제', onClear)
 
@@ -783,6 +822,13 @@ export const register: Register = on => {
                 const progress = progressOf(state, task)
                 const isFaded = !isOpen(task)
                 const hasActions = isOpen(task) && isShown(task)
+                // 처리된 요청과 남은 요청이 섞여 있을 때만 처리된 요청을 맨 위 「처리됨 N개」 한 줄로 접는다.
+                // 펼치면 원래 순서대로 전부 보인다. 전부 처리된 작업은 접으면 남는 게 없으므로 그대로 다 보인다
+                const messages = messagesOf(state, task)
+                const resolvedCount = messages.filter(message => isResolvedIn(task, message)).length
+                const canFold = resolvedCount > 0 && resolvedCount < messages.length
+                const isResolvedFolded = canFold && !resolvedOpen.includes(task.id)
+                const shownMessages = isResolvedFolded ? messages.filter(message => !isResolvedIn(task, message)) : messages
 
                 // 한 작업 = 제목 줄 하나(오른쪽에 진행 막대) + 필요할 때만 보조 줄.
                 // 요청 목록이 펼쳐진 작업은 다음 작업과 붙어 보이지 않게 아래에 간격을 둔다.
@@ -830,13 +876,14 @@ export const register: Register = on => {
                         {/* 간격 단계(xs)는 원하는 것보다 넓어서 px 로 정한 투명 그림을 끼워 간격을 만든다.
                             제목과 첫 요청 사이는 요청끼리의 간격보다 좁지 않게 둔다. 터미널에는 그림이 없어 간격도 없다 */}
                         {spacer(TITLE_GAP_PX)}
-                        {messagesOf(state, task).map((message, index) => {
+                        {canFold && resolvedToggle(task, resolvedCount, isResolvedFolded)}
+                        {shownMessages.map((message, index) => {
                           const isDone = isResolvedIn(task, message)
 
                           // 요청은 작업 제목보다 한 단계 작은 글씨로 내려 제목과 구분하고, 표시와 글자 사이를 좁힌다. 처리한 요청은 회색 + 취소선
                           return (
                             <Box flexDirection="column">
-                              {index > 0 && spacer(ROW_GAP_PX)}
+                              {(index > 0 || canFold) && spacer(ROW_GAP_PX)}
                               <Box flexDirection="row" alignItems="center" gap="xs">
                                 {checkbox(isDone)}
                                 <Text size="footnote" color={isDone ? 'subtle' : undefined} strikethrough={isDone} wrap="wrap">

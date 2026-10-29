@@ -33,6 +33,6 @@ export type Ledger = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'task-tracker': { ledger: Shaped<Ledger>; expanded: number[]; collapsed: string[] }
+    'task-tracker': { ledger: Shaped<Ledger>; expanded: number[]; collapsed: string[]; resolvedShown: number[] }
   }
 }
