@@ -989,8 +989,11 @@ export const register: Register = on => {
               </Text>
               {/* 패널과 같은 순서: 숫자 → 막대 */}
               {progress && <Text color="subtle">{progressText(progress)}</Text>}
+              {/* 막대가 왼쪽 숫자에 붙어 보이지 않게 다른 간격보다 한 단계 더 띄운다 */}
               {progress && Svg && (
-                <Svg source={barSvg(progress, HEX.waiting, BAND_BAR_WIDTH)} alt={progressText(progress)} height={BAR_HEIGHT} />
+                <Box marginLeft="xs" flexShrink={0}>
+                  <Svg source={barSvg(progress, HEX.waiting, BAND_BAR_WIDTH)} alt={progressText(progress)} height={BAR_HEIGHT} />
+                </Box>
               )}
             </Box>
           )}
