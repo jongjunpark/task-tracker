@@ -980,7 +980,14 @@ export const register: Register = on => {
     const progress = current ? progressOf(state, current) : undefined
 
     return (
-      <Box flexDirection="row" alignItems="center" justifyContent="space-between" gap={2}>
+      // 데스크톱은 한 줄의 테두리에 제목이 붙어 보여서 왼쪽을 띄운다
+      <Box
+        flexDirection="row"
+        alignItems="center"
+        justifyContent="space-between"
+        gap={2}
+        paddingLeft={e.surface === 'terminal' ? 0 : 'sm'}
+      >
         <Box flexDirection="row" alignItems="center" gap={2} flexShrink={1}>
           {current && (
             <Box flexDirection="row" alignItems="center" gap={1} flexShrink={1}>
@@ -989,11 +996,8 @@ export const register: Register = on => {
               </Text>
               {/* 패널과 같은 순서: 숫자 → 막대 */}
               {progress && <Text color="subtle">{progressText(progress)}</Text>}
-              {/* 막대가 왼쪽 숫자에 붙어 보이지 않게 다른 간격보다 한 단계 더 띄운다 */}
               {progress && Svg && (
-                <Box marginLeft="xs" flexShrink={0}>
-                  <Svg source={barSvg(progress, HEX.waiting, BAND_BAR_WIDTH)} alt={progressText(progress)} height={BAR_HEIGHT} />
-                </Box>
+                <Svg source={barSvg(progress, HEX.waiting, BAND_BAR_WIDTH)} alt={progressText(progress)} height={BAR_HEIGHT} />
               )}
             </Box>
           )}
