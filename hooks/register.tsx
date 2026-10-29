@@ -862,17 +862,30 @@ export const register: Register = on => {
                     <Box flexDirection="row" alignItems="center" gap={0}>
                       {/* 제목을 누르면 요청 목록이 접히고 펼쳐진다.
                           제목이 줄어들고 막대는 줄어들지 않게 해서 막대가 잘리지 않게 한다 */}
-                      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-                        <Button key={`task-${task.id}`} plain onPress={() => toggle($, task.id)}>
-                          <Text
-                            weight="semibold"
-                            color={isFaded ? 'subtle' : undefined}
-                            strikethrough={task.status === 'dropped'}
-                          >
-                            {task.title}
-                          </Text>{' '}
+                      {/* 데스크톱은 버튼 안 글자 색을 무시해서, 회색으로 그릴 번호(#N)는 버튼 밖에 둔다.
+                          데스크톱은 버튼의 오른쪽 여백이 제목과 번호 사이를 띄운다 */}
+                      <Box
+                        flexDirection="row"
+                        alignItems="center"
+                        gap={e.surface === 'terminal' ? 1 : 0}
+                        flexGrow={1}
+                        flexShrink={1}
+                        minWidth={0}
+                      >
+                        <Box flexShrink={1} minWidth={0} overflow="hidden">
+                          <Button key={`task-${task.id}`} plain onPress={() => toggle($, task.id)}>
+                            <Text
+                              weight="semibold"
+                              color={isFaded ? 'subtle' : undefined}
+                              strikethrough={task.status === 'dropped'}
+                            >
+                              {task.title}
+                            </Text>
+                          </Button>
+                        </Box>
+                        <Box flexShrink={0}>
                           <Text size="footnote" dimColor>{`#${task.id}`}</Text>
-                        </Button>
+                        </Box>
                       </Box>
                       {/* 막대와 휴지통 사이도 숫자와 막대 사이와 같은 간격 */}
                       {(progress || isClearable(task.status)) && (
