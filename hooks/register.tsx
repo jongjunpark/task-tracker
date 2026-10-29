@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, PromptOrigin, Register } from 'claude-code'
 
 import type { Ledger, Message, Task, TaskStatus } from '../types'
 
@@ -158,6 +158,24 @@ const isUnsorted = (message: Message) => message.taskId === undefined && message
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
 
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim()
+
+// 다른 세션이 넘긴 요청(오케스트레이션). 사람 눈에 안 보이는 메시지(isMeta)로 오지만 기록한다
+const SESSION_ORIGINS: ReadonlySet<PromptOrigin['kind']> = new Set(['peer', 'peer-send-message', 'coordinator', 'projects-relay'])
+
+const ENTITIES: Record<string, string> = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&amp;': '&' }
+
+// 「Another Claude session sent a message」 머리글과 뒤에 붙는 안내를 떼고 본문만 남긴다. encoded="1" 이면 본문이 HTML 이스케이프돼 있다
+const peerBody = (text: string) => {
+  const found = /<cross-session-message\b([^>]*)>\n?([\s\S]*?)\n?<\/cross-session-message>/.exec(text)
+
+  if (found === null) {
+    return text
+  }
+
+  const [, attrs = '', body = ''] = found
+
+  return /\bencoded="1"/.test(attrs) ? body.replace(/&(?:lt|gt|quot|#39|amp);/g, one => ENTITIES[one] ?? one) : body
+}
 
 const ratio = (progress: Progress) => (progress.total > 0 ? progress.done / progress.total : 0)
 
@@ -564,9 +582,10 @@ export const register: Register = on => {
 
   // 메시지 기록은 모델에 맡기지 않는다: 보낸 메시지는 훅이 바로 적고, 모델은 분류만 한다.
   on('prompt.submit', async ($, e, next) => {
-    const text = e.text.trim()
+    const isFromSession = SESSION_ORIGINS.has(e.origin.kind)
+    const text = (isFromSession ? peerBody(e.text) : e.text).trim()
 
-    if (e.command !== undefined || e.isMeta === true || text === '') {
+    if (e.command !== undefined || (e.isMeta === true && !isFromSession) || text === '') {
       return next(e)
     }
 

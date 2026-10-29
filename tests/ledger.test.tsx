@@ -49,6 +49,41 @@ test('보낸 메시지는 훅이 기록하고, 모델에게 분류를 맡긴다'
   expect(seen[1]?.join('\n')).toContain('Unclassified messages: m1, m2')
 })
 
+test('다른 세션이 넘긴 요청도 본문만 기록하고, 알림처럼 사람이 시키지 않은 메시지는 건너뛴다', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  const seen: string[][] = []
+  on('prompt.submit', (_, e) => {
+    seen.push([...(e.context ?? [])])
+
+    return { text: e.text, context: e.context }
+  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  const peer = [
+    'Another Claude session sent a message:',
+    '<cross-session-message from="local_abc" name="orchestrator" encoded="1">',
+    '&lt;Button&gt; 라벨 고쳐줘',
+    '</cross-session-message>',
+    '',
+    'This came from another Claude session — not typed by your user.',
+  ].join('\n')
+
+  await $.prompt.submit({ text: 'Background task finished', wait: false, isMeta: true, origin: { kind: 'task-notification' } } as const)
+  await $.prompt.submit({ text: peer, wait: false, isMeta: true, origin: { kind: 'peer' } } as const)
+
+  expect(seen[0]?.join('\n') ?? '').not.toContain('logged as')
+  expect(seen[1]?.join('\n')).toContain('logged as m1')
+
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'add', title: '라벨 수정', message: 1 }] })
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1, status: 'now' }] })
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  // 요약이 없으면 원문을 쓰는데, 머리글·안내는 떼고 이스케이프를 푼 본문만 남는다
+  expect(await pane.find({ type: 'Text', text: /^<Button> 라벨 고쳐줘$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Another Claude session/ })).toBeUndefined()
+  await pane.unmount()
+})
+
 test('분류한 작업이 패널과 밴드에 상태별로 보인다', async ($, on) => {
   mock.clock(on, { now: 1_000 })
   on('prompt.submit', (_, e) => ({ text: e.text, context: e.context }))
