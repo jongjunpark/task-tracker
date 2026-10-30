@@ -252,7 +252,9 @@ const taskLine = (state: Ledger, task: Task) => {
   const doing = task.doing ? ` — ${task.doing}` : ''
   const ask = task.status === 'blocked' && task.ask ? ` — needs from person: ${task.ask}` : ''
 
-  return `#${task.id} [${LABEL[task.status]}] ${task.title}${detail}${doing}${ask}`
+  const self = task.isSelf === true ? ' (self-assigned)' : ''
+
+  return `#${task.id} [${LABEL[task.status]}] ${task.title}${self}${detail}${doing}${ask}`
 }
 
 // 모델에게 보내는 목록: 메시지마다 붙으므로 길이가 쌓이지 않게 한다.
@@ -477,6 +479,8 @@ const TOOL_DESCRIPTION = [
   '`blocked` requires `ask`: one concrete sentence, addressed to them, of what they must answer or do',
   '(e.g. "Pick icon 1, 2 or 3", "Run /reload-plugins"). Attaching their next message to a blocked task',
   'moves it back to `now` on its own. Give a few words in `doing` for the task in progress.',
+  'Tasks marked (self-assigned) were added from your own answers: things you said you would do yourself.',
+  'Treat them like the rest: do them and set them done, or set them dropped if they no longer apply.',
   'Do not mention these updates in your reply.',
 ].join(' ')
 
@@ -523,7 +527,9 @@ const whipText = (state: Ledger) => {
 
     return [
       `#${task.id} [${LABEL[task.status]}] ${task.title}`,
-      ...(pending.length > 0 ? pending.map(quote) : ['  (no open request: finish it, or mark it done if it already is)']),
+      ...(pending.length > 0
+        ? pending.map(quote)
+        : [task.isSelf === true ? '  (you said you would do this yourself)' : '  (no open request: finish it, or mark it done if it already is)']),
     ]
   }
   const blocked = state.tasks.filter(task => task.status === 'blocked')
@@ -557,6 +563,105 @@ const whip = async ($: EngineInterface) => {
   void $.prompt.submit({ text })
 
   return true
+}
+
+// 스스로 정한 할 일: 턴 끝 답변에서 Claude 가 「하겠다」고 하고 아직 안 한 일을 작은 모델로 뽑아 대기 작업으로 넣는다.
+// Claude 가 잊는 게 문제라서 기록을 Claude 에게 맡기지 않는다
+const PROMISE_MODEL = 'haiku'
+const PROMISE_TIMEOUT_MS = 20_000
+const MAX_PROMISES = 8
+const MIN_ANSWER_CHARS = 40
+const PROMISE_ANSWER_CHARS = 12_000
+
+const PROMISE_SYSTEM = [
+  'You read the final message an AI coding assistant wrote at the end of its turn, and list the work it says it will do itself and has not done yet.',
+  'Count: plans it states for itself ("I will compare X next", "then 2 → 4 → 3", "not done yet: Y", "starting on 1 now").',
+  'Do not count: work it already finished in that message, things it asks the person to do or decide,',
+  'offers that wait on the person ("if you want, I can"), and anything already on the open task list.',
+  'Answer with only a JSON array of strings: one short title per item, a noun phrase in the message language, under 30 characters.',
+  `At most ${MAX_PROMISES} items. Answer [] when there are none.`,
+].join(' ')
+
+const normalTitle = (title: string) => title.replace(/\s+/g, '').toLowerCase()
+
+// 모델 답에서 첫 JSON 배열만 읽는다. 읽을 수 없으면 아무것도 넣지 않는다
+const parseTitles = (text: string): string[] => {
+  const found = /\[[\s\S]*\]/.exec(text)
+
+  if (found === null) {
+    return []
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(found[0])
+
+    return Array.isArray(parsed)
+      ? parsed.flatMap(item => {
+          const title = asText(item, 80)
+
+          return title === undefined ? [] : [title]
+        })
+      : []
+  } catch {
+    return []
+  }
+}
+
+const addSelfTasks = (state: Ledger, titles: readonly string[], at: number): Ledger => {
+  const known = new Set(state.tasks.filter(isOpen).map(task => normalTitle(task.title)))
+  const fresh = titles.filter(title => {
+    const key = normalTitle(title)
+    const isNew = !known.has(key)
+    known.add(key)
+
+    return isNew
+  })
+  const tasks = fresh.slice(0, MAX_PROMISES).map(
+    (title, index): Task => ({
+      id: state.nextTaskId + index,
+      title,
+      status: 'waiting',
+      messageIds: [],
+      isSelf: true,
+      createdAt: at,
+      updatedAt: at,
+    }),
+  )
+
+  return tasks.length === 0
+    ? state
+    : { ...state, tasks: capTasks([...state.tasks, ...tasks]), nextTaskId: state.nextTaskId + tasks.length }
+}
+
+const notePromises = async ($: EngineInterface, answer: string) => {
+  const open = (await read($, ledger)).tasks.filter(isOpen)
+  const reply = await $.model.complete({
+    model: PROMISE_MODEL,
+    system: PROMISE_SYSTEM,
+    prompt: [
+      'Open task list:',
+      ...(open.length > 0 ? open.map(task => `- ${task.title}`) : ['(empty)']),
+      '',
+      'Final message:',
+      clip(answer, PROMISE_ANSWER_CHARS),
+    ].join('\n'),
+    maxTokens: 512,
+    effort: 'low',
+    timeoutMs: PROMISE_TIMEOUT_MS,
+  })
+
+  if (!reply.isAnswered) {
+    return
+  }
+
+  const titles = parseTitles(reply.text)
+
+  if (titles.length === 0) {
+    return
+  }
+
+  const at = await $.clock.now()
+  await update($, ledger, state => addSelfTasks(state, titles, at))
 }
 
 const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: PANE_TITLE })
@@ -709,6 +814,17 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: COMMAND }, async ($, e) => ({ text: await runCommand($, e.args) }))
+
+  // 본 대화의 답으로 끝난 턴만 본다(서브에이전트·중단·오류 제외). 뽑는 동안 턴 끝을 붙잡지 않게 기다리지 않는다
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+
+    if (e.agentId === undefined && e.reason === 'answer' && e.answer.trim().length >= MIN_ANSWER_CHARS) {
+      void notePromises($, e.answer)
+    }
+
+    return result
+  })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
@@ -943,7 +1059,8 @@ export const register: Register = on => {
                           </Button>
                         </Box>
                         <Box flexShrink={0}>
-                          <Text size="footnote" dimColor>{`#${task.id}`}</Text>
+                          {/* 스스로 정한 일은 번호 뒤에 표시해 사람이 시킨 일과 구분한다 */}
+                          <Text size="footnote" dimColor>{`#${task.id}${task.isSelf === true ? ' · 스스로' : ''}`}</Text>
                         </Box>
                       </Box>
                       {/* 막대와 휴지통 사이도 숫자와 막대 사이와 같은 간격 */}

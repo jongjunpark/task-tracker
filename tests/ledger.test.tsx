@@ -421,3 +421,51 @@ test('채찍은 안 끝난 작업의 남은 요청 원문을 모델에게 다시
   expect(await quiet.find({ key: 'whip' })).toBeUndefined()
   await quiet.unmount()
 })
+
+test('턴 끝 답변에서 스스로 하겠다고 한 일을 뽑아 「스스로」 작업으로 넣고, 이미 있는 작업은 다시 넣지 않는다', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  on('prompt.submit', (_, e) => ({ text: e.text, context: e.context }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  const asked: string[] = []
+  on('model.complete', (_, e) => {
+    asked.push(e.prompt)
+
+    return {
+      value: {
+        isAnswered: true,
+        text: '```json\n["원본과 값 대조", "숨은 레이어 점검", "README 정리"]\n```',
+        usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+    } as const
+  })
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+
+  await $.prompt.submit(typed('README 도 정리해줘'))
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'add', title: 'README 정리', message: 1 }] })
+
+  const answer = '1번부터 바로 시작합니다. 원본과 main 의 값을 대조하고, 이어서 숨은 레이어를 점검하겠습니다.'
+  await $.turn.complete({ answer, durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  for (let tick = 0; tick < 50 && asked.length === 0; tick++) {
+    await Promise.resolve()
+  }
+  // 본 대화가 아닌 턴(서브에이전트)은 보지 않는다
+  await $.turn.complete({ answer, durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer', agentId: 'a1' })
+
+  let listed = ''
+  for (let tick = 0; tick < 50 && !listed.includes('숨은 레이어 점검'); tick++) {
+    await Promise.resolve()
+    const tool = await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1 }] })
+    listed = String(tool.result)
+  }
+
+  expect(asked.length).toBe(1)
+  expect(asked[0]).toContain('- README 정리')
+  expect(listed).toContain('#2 [대기] 원본과 값 대조 (self-assigned)')
+  expect(listed).toContain('#3 [대기] 숨은 레이어 점검 (self-assigned)')
+  // 이미 있는 작업은 다시 넣지 않는다
+  expect(listed).not.toContain('#4')
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await pane.find({ type: 'Text', text: /^#2 · 스스로$/ })).toBeDefined()
+  await pane.unmount()
+})

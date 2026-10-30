@@ -8,6 +8,8 @@ export type Task = {
   // 확인 필요(blocked)일 때 사람이 답하거나 해야 할 일, 한 문장
   ask?: string
   messageIds: number[]
+  // Claude 가 스스로 하겠다고 한 일(턴 끝 답변에서 뽑음). 사람이 시킨 요청이 없다
+  isSelf?: true
   createdAt: number
   updatedAt: number
 }
