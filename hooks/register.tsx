@@ -1148,14 +1148,14 @@ export const register: Register = on => {
     // 터미널 표에도 Svg 키가 있지만 아무것도 그리지 않는다: 그림 요소는 터미널이 아닐 때만 쓰고, 터미널은 글자로 대신한다
     const Svg = e.surface !== 'terminal' && 'Svg' in elements ? elements.Svg : undefined
     const progress = current ? progressOf(state, current) : undefined
-    // 진행 중인 작업이 없을 때는 왼쪽이 비지 않게 남은 일의 수를 회색으로 적는다
-    const openCount = state.tasks.filter(isOpen).length
+    // 남은 일의 수를 회색으로 적는다. 진행 중인 작업이 있으면 그 작업을 뺀 나머지를 센다
+    const restCount = state.tasks.filter(task => isOpen(task) && task.id !== current?.id).length
     const unsortedCount = state.messages.filter(isUnsorted).length
-    const idleText = [
-      '진행 중인 작업 없음',
-      ...(openCount > 0 ? [`남은 작업 ${openCount}개`] : []),
+    const restParts = [
+      ...(restCount > 0 ? [`남은 작업 ${restCount}개`] : []),
       ...(unsortedCount > 0 ? [`분류 전 ${unsortedCount}개`] : []),
-    ].join(' · ')
+    ]
+    const restText = (current === undefined ? ['진행 중인 작업 없음', ...restParts] : restParts).join(' · ')
 
     return (
       // 데스크톱은 한 줄의 테두리에 제목이 붙어 보여서 왼쪽을 띄운다
@@ -1179,10 +1179,10 @@ export const register: Register = on => {
               )}
             </Box>
           )}
-          {current === undefined && (
-            <Text dimColor wrap="truncate-end">
-              {idleText}
-            </Text>
+          {restText !== '' && (
+            <Box flexShrink={0}>
+              <Text dimColor>{restText}</Text>
+            </Box>
           )}
         </Box>
         {/* 채찍은 다시 챙길 작업이 있을 때만 보인다 */}

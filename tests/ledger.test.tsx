@@ -415,6 +415,8 @@ test('채찍은 안 끝난 작업의 남은 요청 원문을 모델에게 다시
   await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1, status: 'now' }] })
 
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  // 진행 중 작업이 있으면 그 작업을 뺀 나머지 수를 적는다
+  expect(await band.find({ type: 'Text', text: /^남은 작업 2개$/ })).toBeDefined()
   await band.press({ key: 'whip' })
   for (let tick = 0; tick < 20 && !sent.some(one => one.kind === 'plugin'); tick++) {
     await Promise.resolve()
