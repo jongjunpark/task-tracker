@@ -153,6 +153,9 @@ const TRASH_SVG = iconSvg(
 
 const isOpen = (task: Task) => task.status !== 'done' && task.status !== 'dropped'
 
+// 스스로 정한 작업은 끝나면 사람이 알 필요가 없어 목록에서 바로 지운다. 사람 메시지가 붙은 것은 시킨 일로 보고 남긴다
+const isFinishedSelf = (task: Task) => task.isSelf === true && task.messageIds.length === 0 && !isOpen(task)
+
 const isUnsorted = (message: Message) => message.taskId === undefined && message.isIgnored !== true
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
@@ -451,6 +454,13 @@ const applyOp = ({ state, notes }: Applied, op: Op, at: number): Applied => {
       updatedAt: at,
     }
     const base = status === 'now' ? setNow(state.tasks, target.id, at) : state.tasks
+
+    if (isFinishedSelf(changed)) {
+      const tasks = base.filter(task => task.id !== target.id)
+
+      return { state: { ...state, tasks }, notes: [...notes, `removed #${target.id} (self-assigned, finished)`] }
+    }
+
     const tasks = base.map(task => (task.id === target.id ? changed : task))
 
     return { state: { ...state, tasks }, notes: [...notes, `updated #${target.id}`] }
@@ -752,6 +762,10 @@ export const register: Register = on => {
       argumentHint: '[done|drop <번호> | whip | clear | reset]',
       immediate: true,
     })
+    // 이전 버전에서 끝난 채 남은 스스로 작업을 치운다
+    await update($, ledger, state =>
+      state.tasks.some(isFinishedSelf) ? { ...state, tasks: state.tasks.filter(task => !isFinishedSelf(task)) } : state,
+    )
 
     return next(e)
   })

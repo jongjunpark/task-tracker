@@ -494,4 +494,10 @@ test('턴 끝 답변에서 스스로 하겠다고 한 일을 뽑아 「스스로
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await pane.find({ type: 'Text', text: /^#2 · 스스로$/ })).toBeDefined()
   await pane.unmount()
+
+  // 스스로 작업은 끝나면 목록에서 바로 지운다
+  const finished = await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 2, status: 'done' }] })
+  expect(String(finished.result)).toContain('removed #2')
+  expect(String(finished.result)).not.toContain('원본과 값 대조')
+  expect(String(finished.result)).toContain('#3 [대기] 숨은 레이어 점검 (self-assigned)')
 })
