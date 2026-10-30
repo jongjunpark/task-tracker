@@ -566,18 +566,26 @@ const whip = async ($: EngineInterface) => {
 }
 
 // 스스로 정한 할 일: 턴 끝 답변에서 Claude 가 「하겠다」고 하고 아직 안 한 일을 작은 모델로 뽑아 대기 작업으로 넣는다.
-// Claude 가 잊는 게 문제라서 기록을 Claude 에게 맡기지 않는다
+// Claude 가 잊는 게 문제라서 기록을 Claude 에게 맡기지 않는다.
+// 하던 일의 진행 보고(남은 페이지, 끝나면 보고)까지 뽑으면 목록이 넘치므로 따로 할 일만 센다
 const PROMISE_MODEL = 'haiku'
 const PROMISE_TIMEOUT_MS = 20_000
-const MAX_PROMISES = 8
+const MAX_PROMISES = 5
 const MIN_ANSWER_CHARS = 40
 const PROMISE_ANSWER_CHARS = 12_000
 
 const PROMISE_SYSTEM = [
-  'You read the final message an AI coding assistant wrote at the end of its turn, and list the work it says it will do itself and has not done yet.',
-  'Count: plans it states for itself ("I will compare X next", "then 2 → 4 → 3", "not done yet: Y", "starting on 1 now").',
-  'Do not count: work it already finished in that message, things it asks the person to do or decide,',
-  'offers that wait on the person ("if you want, I can"), and anything already on the open task list.',
+  'You read the final message an AI coding assistant wrote at the end of its turn.',
+  'List only separate to-do items it commits to doing itself later: distinct pieces of work a person would want written on a to-do list so they are not forgotten.',
+  'Count: a list of things it says it will do after the current work ("next: 1. fix X 2. open a PR for Y"),',
+  'and a stated plan to take up a different piece of work later ("after this I will fix Z").',
+  'Do not count: progress on the work it is doing right now (a run, count or job still going; its remaining pages, items or steps; waiting for it;',
+  'checking, collecting or reporting its result when it finishes; retrying or re-running it;',
+  'the steps it says follow once that job finishes, such as re-running what failed, counting again or sending the report);',
+  'the task in progress named below and every step of that same job; work already finished in that message;',
+  'things it asks the person to do or decide; offers that wait on the person ("if you want, I can");',
+  'anything on the open task list, even if worded differently.',
+  'Most messages have none; when unsure, leave it out.',
   'Answer with only a JSON array of strings: one short title per item, a noun phrase in the message language, under 30 characters.',
   `At most ${MAX_PROMISES} items. Answer [] when there are none.`,
 ].join(' ')
@@ -635,12 +643,16 @@ const addSelfTasks = (state: Ledger, titles: readonly string[], at: number): Led
 
 const notePromises = async ($: EngineInterface, answer: string) => {
   const open = (await read($, ledger)).tasks.filter(isOpen)
+  const current = open.find(task => task.status === 'now')
+  const doing = current?.doing === undefined ? '' : ` (${current.doing})`
   const reply = await $.model.complete({
     model: PROMISE_MODEL,
     system: PROMISE_SYSTEM,
     prompt: [
       'Open task list:',
       ...(open.length > 0 ? open.map(task => `- ${task.title}`) : ['(empty)']),
+      '',
+      `Task in progress: ${current === undefined ? '(none)' : current.title + doing}`,
       '',
       'Final message:',
       clip(answer, PROMISE_ANSWER_CHARS),

@@ -459,7 +459,13 @@ test('턴 끝 답변에서 스스로 하겠다고 한 일을 뽑아 「스스로
   on('turn.complete', (_, e) => ({ text: e.answer }))
 
   await $.prompt.submit(typed('README 도 정리해줘'))
-  await $.tool.call({ tool: TOOL, ops: [{ op: 'add', title: 'README 정리', message: 1 }] })
+  await $.tool.call({
+    tool: TOOL,
+    ops: [
+      { op: 'add', title: 'README 정리', message: 1 },
+      { op: 'update', task: 1, status: 'now', doing: '설치 절을 고치는 중' },
+    ],
+  })
 
   const answer = '1번부터 바로 시작합니다. 원본과 main 의 값을 대조하고, 이어서 숨은 레이어를 점검하겠습니다.'
   await $.turn.complete({ answer, durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -478,6 +484,8 @@ test('턴 끝 답변에서 스스로 하겠다고 한 일을 뽑아 「스스로
 
   expect(asked.length).toBe(1)
   expect(asked[0]).toContain('- README 정리')
+  // 하던 일의 단계는 따로 세지 않도록 진행 중 작업을 알려 준다
+  expect(asked[0]).toContain('Task in progress: README 정리 (설치 절을 고치는 중)')
   expect(listed).toContain('#2 [대기] 원본과 값 대조 (self-assigned)')
   expect(listed).toContain('#3 [대기] 숨은 레이어 점검 (self-assigned)')
   // 이미 있는 작업은 다시 넣지 않는다
