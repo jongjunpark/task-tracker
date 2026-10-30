@@ -34,6 +34,7 @@ claude plugin install task-tracker --marketplace jongjunpark/task-tracker
 - 확인 필요는 사람이 답하거나 해야 할 일이 있을 때만 쓰고, 그 할 일(`ask`)이 반드시 함께 있어야 한다. 그 작업에 다음 메시지가 붙으면 다시 진행으로 돌아간다.
 - 일을 마친 뒤 다음 단계(수정해도 되는지, 어느 쪽으로 할지)를 물으며 턴을 끝낸 작업은 완료가 아니라 확인 필요로 둔다.
 - Claude 에게는 안 끝난 작업 전부와 최근 완료 3개를 자세히, 그보다 오래된 완료는 제목만 짧게 보낸다.
+- 채찍(입력창 위 한 줄의 [채찍] 버튼, `/task-tracker whip`): 진행·보류·대기 작업과 분류 전 메시지를 남은 요청 원문과 함께 Claude 에게 다시 보내, 빠뜨린 것 없이 하나씩 처리하게 한다. 확인 필요 작업은 그대로 둔다. 누를 때만 보내고, Claude 가 일하는 중이면 그 턴이 끝난 뒤 들어간다.
 
 ## 화면
 
@@ -45,7 +46,7 @@ claude plugin install task-tracker --marketplace jongjunpark/task-tracker
   - 확인 필요 작업은 제목 아래에 `⤷ 할 일` 을 표시
   - 안 끝난 작업에는 「작업 완료」·「작업 취소」 버튼
   - 완료·취소 묶음에는 「모두 삭제」, 끝난 작업 줄마다 휴지통(하나만 삭제)
-- 프롬프트 위 한 줄: 진행 중 작업 제목, 진행 막대, 상태별 개수, [목록] 버튼
+- 프롬프트 위 한 줄: 진행 중 작업 제목, 진행 막대, 상태별 개수, [채찍](다시 챙길 작업이 있을 때만)·[목록] 버튼
 
   <img src="docs/band.png" alt="입력창 위 한 줄" width="864">
 
@@ -57,6 +58,7 @@ claude plugin install task-tracker --marketplace jongjunpark/task-tracker
 
 - `/task-tracker` — 패널 열기
 - `/task-tracker done <번호>` · `/task-tracker drop <번호>` — 완료 · 취소 처리
+- `/task-tracker whip` — 안 끝난 작업을 Claude 에게 다시 챙기게 하기
 - `/task-tracker clear` — 완료·취소된 작업 정리
 - `/task-tracker reset` — 목록 비우기
 

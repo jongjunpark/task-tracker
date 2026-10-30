@@ -504,6 +504,61 @@ const TOOL_SCHEMA = {
   required: ['ops'],
 }
 
+// 채찍: 안 끝난 작업(진행·보류·대기)과 분류 전 메시지를 요청 원문과 함께 모델에게 다시 보낸다.
+// 확인 필요 작업은 사람 몫이라 그대로 두라고만 알린다
+const WHIP_STATUSES: readonly TaskStatus[] = ['now', 'paused', 'waiting']
+const WHIP_MESSAGE_CHARS = 400
+
+const whipText = (state: Ledger) => {
+  const tasks = WHIP_STATUSES.flatMap(status => state.tasks.filter(task => task.status === status))
+  const unsorted = state.messages.filter(isUnsorted)
+
+  if (tasks.length === 0 && unsorted.length === 0) {
+    return undefined
+  }
+
+  const quote = (message: Message) => `  - m${message.id}: ${clip(oneLine(message.text), WHIP_MESSAGE_CHARS)}`
+  const taskBlock = (task: Task) => {
+    const pending = messagesOf(state, task).filter(message => !isResolvedIn(task, message))
+
+    return [
+      `#${task.id} [${LABEL[task.status]}] ${task.title}`,
+      ...(pending.length > 0 ? pending.map(quote) : ['  (no open request: finish it, or mark it done if it already is)']),
+    ]
+  }
+  const blocked = state.tasks.filter(task => task.status === 'blocked')
+
+  return [
+    'The person pressed the reminder: these tasks are not finished, and some may have been forgotten.',
+    'Go through every one of them now, in this order, without skipping any.',
+    `For each: do what its open requests ask, check it, then resolve the requests and set the task done with the ${TOOL_FULL} tool.`,
+    'If one cannot go on without the person, set it blocked with an `ask`. If one is already done, check that and mark it done.',
+    'Classify the unclassified messages first. End with one line per task saying what you did.',
+    '',
+    ...(unsorted.length > 0 ? ['Unclassified messages:', ...unsorted.map(quote), ''] : []),
+    ...tasks.flatMap(task => [...taskBlock(task), '']),
+    ...(blocked.length > 0
+      ? [`Waiting on the person, leave as they are: ${blocked.map(task => `#${task.id} ${task.title}`).join(', ')}`]
+      : []),
+  ]
+    .join('\n')
+    .trim()
+}
+
+// 사람이 누를 때만 보낸다. 세션이 일하는 중이면 끝난 뒤 한 턴으로 들어간다.
+// 보낸 결과는 기다리지 않는다: 기다리면 명령이 그 턴이 끝날 때까지 묶인다
+const whip = async ($: EngineInterface) => {
+  const text = whipText(await read($, ledger))
+
+  if (text === undefined) {
+    return false
+  }
+
+  void $.prompt.submit({ text })
+
+  return true
+}
+
 const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: PANE_TITLE })
 
 const toggle = ($: EngineInterface, id: number) =>
@@ -553,13 +608,17 @@ const runCommand = async ($: EngineInterface, args: string) => {
     return '완료·취소된 작업을 목록에서 뺐습니다.'
   }
 
+  if (verb === 'whip') {
+    return (await whip($)) ? '안 끝난 작업을 다시 챙기라고 보냈습니다.' : '다시 챙길 작업이 없습니다.'
+  }
+
   if (verb === 'reset') {
     await update($, ledger, () => EMPTY)
 
     return '작업 목록을 비웠습니다.'
   }
 
-  return '사용법: /task-tracker · /task-tracker done <번호> · /task-tracker drop <번호> · /task-tracker clear · /task-tracker reset'
+  return '사용법: /task-tracker · /task-tracker done <번호> · /task-tracker drop <번호> · /task-tracker whip · /task-tracker clear · /task-tracker reset'
 }
 
 export const register: Register = on => {
@@ -573,7 +632,7 @@ export const register: Register = on => {
     await $.command.register({
       name: COMMAND,
       description: '이 세션에서 시킨 작업 목록 열기',
-      argumentHint: '[done|drop <번호> | clear | reset]',
+      argumentHint: '[done|drop <번호> | whip | clear | reset]',
       immediate: true,
     })
 
@@ -978,6 +1037,7 @@ export const register: Register = on => {
     // 터미널 표에도 Svg 키가 있지만 아무것도 그리지 않는다: 그림 요소는 터미널이 아닐 때만 쓰고, 터미널은 글자로 대신한다
     const Svg = e.surface !== 'terminal' && 'Svg' in elements ? elements.Svg : undefined
     const progress = current ? progressOf(state, current) : undefined
+    const canWhip = whipText(state) !== undefined
 
     return (
       // 데스크톱은 한 줄의 테두리에 제목이 붙어 보여서 왼쪽을 띄운다
@@ -1013,7 +1073,11 @@ export const register: Register = on => {
             ))}
           </Box>
         </Box>
-        <Button key="open" label="목록" onPress={() => openPane($)} />
+        {/* 채찍은 다시 챙길 작업이 있을 때만 보인다 */}
+        <Box flexDirection="row" alignItems="center" gap={e.surface === 'terminal' ? 1 : 'xs'} flexShrink={0}>
+          {canWhip && <Button key="whip" label="채찍" onPress={() => whip($)} />}
+          <Button key="open" label="목록" onPress={() => openPane($)} />
+        </Box>
       </Box>
     )
   })

@@ -375,3 +375,49 @@ test('처리된 요청은 남은 요청이 있을 때 「처리됨 N개」 한 �
   expect(await pane.find({ type: 'Text', text: /^로그인 버그 수정$/ })).toBeDefined()
   await pane.unmount()
 })
+
+test('채찍은 안 끝난 작업의 남은 요청 원문을 모델에게 다시 보내고, 확인 필요 작업은 건드리지 말라고만 알린다', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  const sent: { text: string; kind: string }[] = []
+  on('prompt.submit', (_, e) => {
+    sent.push({ text: e.text, kind: e.origin.kind })
+
+    return { text: e.text, context: e.context }
+  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+
+  await $.prompt.submit(typed('로그인 버그 고쳐줘'))
+  await $.prompt.submit(typed('README 도 정리해줘'))
+  await $.prompt.submit(typed('아이콘 바꿔줘'))
+  await $.tool.call({
+    tool: TOOL,
+    ops: [
+      { op: 'add', title: '로그인 버그 수정', message: 1, status: 'now' },
+      { op: 'add', title: 'README 정리', message: 2 },
+      { op: 'add', title: '아이콘 교체', message: 3, status: 'blocked', ask: '1, 2 중 고르기' },
+      { op: 'resolve', message: 1 },
+    ],
+  })
+
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'whip' })
+  for (let tick = 0; tick < 20 && !sent.some(one => one.kind === 'plugin'); tick++) {
+    await Promise.resolve()
+  }
+  await band.unmount()
+
+  const whipped = sent.find(one => one.kind === 'plugin')?.text ?? ''
+  expect(whipped).toContain('#2 [대기] README 정리')
+  expect(whipped).toContain('m2: README 도 정리해줘')
+  // 처리된 요청은 다시 보내지 않는다
+  expect(whipped).not.toContain('m1:')
+  expect(whipped).toContain('#1 [진행] 로그인 버그 수정')
+  expect(whipped).toContain('leave as they are: #3 아이콘 교체')
+  expect(whipped).not.toContain('m3:')
+
+  // 다시 챙길 작업이 없으면 버튼이 없다
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1, status: 'done' }, { op: 'update', task: 2, status: 'done' }] })
+  const quiet = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await quiet.find({ key: 'whip' })).toBeUndefined()
+  await quiet.unmount()
+})
