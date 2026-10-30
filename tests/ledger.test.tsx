@@ -126,7 +126,9 @@ test('분류한 작업이 패널과 밴드에 상태별로 보인다', async ($,
     const band = await $.ui.mount({ ...BAND, surface })
     expect((await band.find({ type: 'Text', text: /^로그인 버그 수정$/ }))?.text).toBe('로그인 버그 수정')
     expect((await band.find({ type: 'Text', text: /^1\/2$/ }))?.text).toBe('1/2')
-    expect(await band.find({ type: 'Text', text: /^진행$/ })).toBeDefined()
+    // 상태별 개수는 패널에서만 보여 주고 한 줄에는 그리지 않는다
+    expect(await band.find({ type: 'Text', text: /^진행$/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /^대기$/ })).toBeUndefined()
     expect(await band.find({ type: 'Text', text: /▶/ })).toBeUndefined()
     await band.unmount()
   }
@@ -233,7 +235,7 @@ test('확인 필요는 할 일이 있어야 걸리고, 패널에 그 할 일이 
   expect(await pane.find({ type: 'Text', text: /^⤷ 아이콘을 1~3번 중 골라 주세요$/ })).toBeDefined()
   await pane.unmount()
 
-  // 프롬프트 위 한 줄에는 할 일을 띄우지 않는다(개수만). 할 일은 패널에서 본다
+  // 프롬프트 위 한 줄에는 할 일을 띄우지 않는다. 할 일은 패널에서 본다
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await band.find({ type: 'Text', text: /⤷/ })).toBeUndefined()
   await band.unmount()
@@ -385,6 +387,12 @@ test('채찍은 안 끝난 작업의 남은 요청 원문을 모델에게 다시
     return { text: e.text, context: e.context }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
+  // 한 줄을 그리지 않으면 엔진 몫으로 넘어간다: 그 자리를 표시하는 글자로 대신한다
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>engine</Text>
+  })
 
   await $.prompt.submit(typed('로그인 버그 고쳐줘'))
   await $.prompt.submit(typed('README 도 정리해줘'))
@@ -415,10 +423,11 @@ test('채찍은 안 끝난 작업의 남은 요청 원문을 모델에게 다시
   expect(whipped).toContain('leave as they are: #3 아이콘 교체')
   expect(whipped).not.toContain('m3:')
 
-  // 다시 챙길 작업이 없으면 버튼이 없다
+  // 다시 챙길 작업도 진행 중 작업도 없으면 한 줄을 그리지 않는다(엔진 몫은 표시 글자로 대신한다)
   await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1, status: 'done' }, { op: 'update', task: 2, status: 'done' }] })
   const quiet = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(await quiet.find({ key: 'whip' })).toBeUndefined()
+  expect(await quiet.find({ type: 'Text', text: /^engine$/ })).toBeDefined()
   await quiet.unmount()
 })
 

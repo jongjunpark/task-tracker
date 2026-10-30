@@ -1135,17 +1135,11 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const state = await read($, ledger)
     const current = state.tasks.find(task => task.status === 'now')
-    const unsorted = state.messages.filter(isUnsorted).length
-    const counts = [
-      ...byStatus(state.tasks)
-        .filter(group => group.status !== 'dropped')
-        .map(group => ({ label: LABEL[group.status], count: group.tasks.length })),
-      ...(unsorted > 0 ? [{ label: '분류 전', count: unsorted }] : []),
-    ]
+    const canWhip = whipText(state) !== undefined
 
-    // 보여 줄 개수가 하나도 없으면(작업이 없거나 취소된 작업만 남은 경우) 한 줄을 그리지 않는다.
-    // 그리면 「목록」 버튼만 있는 빈 줄이 된다.
-    if (e.props.hasSurvey || counts.length === 0) {
+    // 상태별 개수는 패널에서 본다. 한 줄은 진행 중 작업과 채찍만 보여 주므로,
+    // 둘 다 없으면 그리지 않는다(그리면 「목록」 버튼만 있는 빈 줄이 된다).
+    if (e.props.hasSurvey || (current === undefined && !canWhip)) {
       return next(e)
     }
 
@@ -1154,7 +1148,6 @@ export const register: Register = on => {
     // 터미널 표에도 Svg 키가 있지만 아무것도 그리지 않는다: 그림 요소는 터미널이 아닐 때만 쓰고, 터미널은 글자로 대신한다
     const Svg = e.surface !== 'terminal' && 'Svg' in elements ? elements.Svg : undefined
     const progress = current ? progressOf(state, current) : undefined
-    const canWhip = whipText(state) !== undefined
 
     return (
       // 데스크톱은 한 줄의 테두리에 제목이 붙어 보여서 왼쪽을 띄운다
@@ -1178,18 +1171,6 @@ export const register: Register = on => {
               )}
             </Box>
           )}
-
-          {/* 한 줄의 개수는 상태 이름·개수·구분점 모두 회색, 항목 사이는 ` · ` 로 촘촘하게.
-              줄어들면 「확인 필요」 가 한 글자씩 꺾이므로 개수는 줄이지 않고, 좁아지면 제목이 말줄임으로 줄어든다 */}
-          <Box flexDirection="row" flexShrink={0}>
-            {counts.map((item, index) => (
-              <Box flexDirection="row">
-                {index > 0 && <Text dimColor>{' · '}</Text>}
-                <Text dimColor>{item.label}</Text>
-                <Text dimColor>{` ${item.count}`}</Text>
-              </Box>
-            ))}
-          </Box>
         </Box>
         {/* 채찍은 다시 챙길 작업이 있을 때만 보인다 */}
         <Box flexDirection="row" alignItems="center" gap={e.surface === 'terminal' ? 1 : 'xs'} flexShrink={0}>
