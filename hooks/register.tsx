@@ -1179,8 +1179,9 @@ export const register: Register = on => {
             </Box>
           )}
 
-          {/* 한 줄의 개수는 상태 이름·개수·구분점 모두 회색, 항목 사이는 ` · ` 로 촘촘하게 */}
-          <Box flexDirection="row">
+          {/* 한 줄의 개수는 상태 이름·개수·구분점 모두 회색, 항목 사이는 ` · ` 로 촘촘하게.
+              줄어들면 「확인 필요」 가 한 글자씩 꺾이므로 개수는 줄이지 않고, 좁아지면 제목이 말줄임으로 줄어든다 */}
+          <Box flexDirection="row" flexShrink={0}>
             {counts.map((item, index) => (
               <Box flexDirection="row">
                 {index > 0 && <Text dimColor>{' · '}</Text>}
