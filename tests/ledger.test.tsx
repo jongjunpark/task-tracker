@@ -407,6 +407,13 @@ test('채찍은 안 끝난 작업의 남은 요청 원문을 모델에게 다시
     ],
   })
 
+  // 진행 중 작업이 없을 때 한 줄 왼쪽은 남은 일의 수로 채운다
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1, status: 'paused' }] })
+  const idle = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await idle.find({ type: 'Text', text: /^진행 중인 작업 없음 · 남은 작업 3개$/ })).toBeDefined()
+  await idle.unmount()
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1, status: 'now' }] })
+
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await band.press({ key: 'whip' })
   for (let tick = 0; tick < 20 && !sent.some(one => one.kind === 'plugin'); tick++) {
