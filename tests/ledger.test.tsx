@@ -24,6 +24,7 @@ const BAND = {
   requestId: 'above-prompt',
   props: {
     hasSurvey: false,
+    isCollapsed: false,
     isWorking: false,
     maxRows: 3,
     bodyColumns: 80,
@@ -500,4 +501,49 @@ test('턴 끝 답변에서 스스로 하겠다고 한 일을 뽑아 「스스로
   expect(String(finished.result)).toContain('removed #2')
   expect(String(finished.result)).not.toContain('원본과 값 대조')
   expect(String(finished.result)).toContain('#3 [대기] 숨은 레이어 점검 (self-assigned)')
+})
+
+test('목록은 세션 id 별로 저장소에도 적혀, 앱을 다시 켜 목록이 비었을 때 세션 시작에서 되살린다', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  mock.store(on)
+  let sessionId = 's1'
+  on('session.id', () => ({ value: sessionId }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.register', (_, e) => ({ value: { tool: e.name } }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('prompt.submit', (_, e) => ({ text: e.text, context: e.context }))
+  const start = { cwd: '/', surface: 'desktop', isInteractive: true } as const
+  const reset = {
+    command: 'task-tracker',
+    args: 'reset',
+    origin: { kind: 'composer' },
+    presentation: { isFullscreen: false, columns: 80 },
+  } as const
+  const list = async () => String((await $.tool.call({ tool: TOOL, ops: [{ op: 'update', task: 1 }] })).result)
+
+  await $.prompt.submit(typed('README 도 정리해줘'))
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'add', title: 'README 정리', message: 1 }] })
+
+  // 다른 세션에서 목록을 비운다: s1 의 저장분은 그대로 남는다
+  sessionId = 's2'
+  await $.command.run(reset)
+  expect(await list()).not.toContain('README 정리')
+
+  // s1 을 다시 열면 비어 있는 목록에 저장분이 돌아온다
+  sessionId = 's1'
+  await $.session.start(start)
+  expect(await list()).toContain('#1 [대기] README 정리')
+
+  // 비운 목록은 저장분도 지워, 다시 열어도 되살아나지 않는다
+  await $.command.run(reset)
+  await $.session.start(start)
+  expect(await list()).toContain('(no tasks yet)')
+
+  // 목록이 이미 있으면 저장분으로 덮지 않는다
+  await $.prompt.submit(typed('아이콘도 바꿔줘'))
+  await $.tool.call({ tool: TOOL, ops: [{ op: 'add', title: '아이콘 교체', message: 1 }] })
+  sessionId = 's2'
+  await $.session.start(start)
+  expect(await list()).toContain('#1 [대기] 아이콘 교체')
 })

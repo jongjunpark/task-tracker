@@ -20,8 +20,9 @@ const EMPTY: Ledger = { tasks: [], messages: [], nextTaskId: 1, nextMessageId: 1
 
 // 필드가 바뀌면 shape 태그를 올린다: 이전 버전이 저장한 값은 reload 뒤에도 남는다.
 // ledger-1 의 Task.step 은 남아 있어도 읽지 않으므로 태그는 그대로 둔다.
+const LEDGER_SHAPE = 'ledger-1'
 const ledger = atom({ plugin: 'task-tracker', key: 'ledger' } as const, EMPTY, {
-  shape: 'ledger-1',
+  shape: LEDGER_SHAPE,
 })
 const expanded = atom({ plugin: 'task-tracker', key: 'expanded' } as const, [])
 // 접힌 상태 묶음: 상태 이름, 분류 전은 'unsorted'
@@ -683,7 +684,100 @@ const notePromises = async ($: EngineInterface, answer: string) => {
   }
 
   const at = await $.clock.now()
-  await update($, ledger, state => addSelfTasks(state, titles, at))
+  await updateLedger($, state => addSelfTasks(state, titles, at))
+}
+
+// $.state 는 프로세스 안에서만 남아 앱을 다시 켜면 빈다. 목록을 쓸 때마다(updateLedger) 세션 id 별로 $.store 에도 적어 두고,
+// 세션을 다시 열었을 때 목록이 비어 있으면 되살린다. 저장소는 플러그인 전체가 4 MiB 라 최근 세션만 남긴다.
+// 자기 플러그인이 낸 state.set 은 자기 훅에 오지 않아서 훅으로 받지 않는다
+const STORE_INDEX = 'sessions'
+const MAX_STORED_SESSIONS = 20
+const MAX_STORED_CHARS = 3_000_000
+
+type StoredSession = { id: string; at: number; size: number }
+
+const storeKey = (id: string) => `ledger:${id}`
+
+const isStoredSession = (value: unknown): value is StoredSession =>
+  isRecord(value) && typeof value.id === 'string' && typeof value.at === 'number' && typeof value.size === 'number'
+
+const isLedger = (value: unknown): value is Ledger =>
+  isRecord(value) &&
+  Array.isArray(value.tasks) &&
+  Array.isArray(value.messages) &&
+  typeof value.nextTaskId === 'number' &&
+  typeof value.nextMessageId === 'number'
+
+// 저장소에는 { shape, value } 로 둔다. 태그가 다르면 이전 버전 값이라 읽지 않는다
+const storedLedger = (stored: unknown) =>
+  isRecord(stored) && stored.shape === LEDGER_SHAPE && isLedger(stored.value) ? stored.value : undefined
+
+const isEmptyLedger = (state: Ledger) => state.tasks.length === 0 && state.messages.length === 0
+
+const saveLedger = async ($: EngineInterface, id: string, state: Ledger) => {
+  const index = await $.store.get(STORE_INDEX)
+  const sessions = Array.isArray(index) ? index.filter(isStoredSession) : []
+  const others = sessions.filter(one => one.id !== id)
+
+  // 빈 목록은 저장분을 지운다: 비운 목록이 다시 열 때 되살아나지 않고, 새 세션이 자리를 차지하지 않게
+  if (isEmptyLedger(state)) {
+    if (others.length !== sessions.length) {
+      await $.store.delete(storeKey(id))
+      await $.store.set(STORE_INDEX, others)
+    }
+
+    return
+  }
+
+  const stored = { shape: LEDGER_SHAPE, value: state }
+  const at = await $.clock.now()
+  const size = JSON.stringify(stored).length
+  const kept = others.slice(-(MAX_STORED_SESSIONS - 1))
+
+  while (kept.length > 0 && kept.reduce((sum, one) => sum + one.size, size) > MAX_STORED_CHARS) {
+    kept.shift()
+  }
+
+  for (const one of others.filter(one => !kept.includes(one))) {
+    await $.store.delete(storeKey(one.id))
+  }
+
+  await $.store.set(storeKey(id), stored)
+  await $.store.set(STORE_INDEX, [...kept, { id, at, size }])
+}
+
+// 쓰기가 겹치지 않게 차례로 저장한다. 세션 id 는 쓴 시점의 것으로 잡는다(저장 차례를 기다리는 사이 바뀔 수 있다).
+// 저장에 실패해도 목록은 그대로 쓴다
+let saving: Promise<void> = Promise.resolve()
+
+const persistLedger = ($: EngineInterface, state: Ledger) =>
+  $.session
+    .id()
+    .then(id => {
+      saving = saving.then(() => saveLedger($, id, state)).catch(() => undefined)
+    })
+    .catch(() => undefined)
+
+const updateLedger = async ($: EngineInterface, change: (state: Ledger) => Ledger) => {
+  const state = await update($, ledger, change)
+  await persistLedger($, state)
+
+  return state
+}
+
+const restoreLedger = async ($: EngineInterface) => {
+  // 아직 적는 중인 저장분이 있으면 끝난 뒤에 읽는다
+  await saving
+
+  if (!isEmptyLedger(await read($, ledger))) {
+    return
+  }
+
+  const restored = storedLedger(await $.store.get(storeKey(await $.session.id())))
+
+  if (restored !== undefined) {
+    await updateLedger($, state => (isEmptyLedger(state) ? restored : state))
+  }
 }
 
 const openPane = ($: EngineInterface) => $.ui.open({ id: PANE, title: PANE_TITLE })
@@ -701,15 +795,15 @@ const toggleFold = ($: EngineInterface, group: string) =>
 const isClearable = (status: TaskStatus) => status === 'done' || status === 'dropped'
 
 const clearGroup = ($: EngineInterface, status: TaskStatus) =>
-  update($, ledger, state => ({ ...state, tasks: state.tasks.filter(task => task.status !== status) }))
+  updateLedger($, state => ({ ...state, tasks: state.tasks.filter(task => task.status !== status) }))
 
 // 끝난 작업 하나만 목록에서 지운다
 const deleteTask = ($: EngineInterface, id: number) =>
-  update($, ledger, state => ({ ...state, tasks: state.tasks.filter(task => task.id !== id) }))
+  updateLedger($, state => ({ ...state, tasks: state.tasks.filter(task => task.id !== id) }))
 
 const setStatus = async ($: EngineInterface, id: number, status: TaskStatus) => {
   const at = await $.clock.now()
-  await update($, ledger, state => applyOp({ state, notes: [] }, { op: 'update', task: id, status }, at).state)
+  await updateLedger($, state => applyOp({ state, notes: [] }, { op: 'update', task: id, status }, at).state)
 }
 
 const runCommand = async ($: EngineInterface, args: string) => {
@@ -730,7 +824,7 @@ const runCommand = async ($: EngineInterface, args: string) => {
   }
 
   if (verb === 'clear') {
-    await update($, ledger, state => ({ ...state, tasks: state.tasks.filter(isOpen) }))
+    await updateLedger($, state => ({ ...state, tasks: state.tasks.filter(isOpen) }))
 
     return '완료·취소된 작업을 목록에서 뺐습니다.'
   }
@@ -740,7 +834,7 @@ const runCommand = async ($: EngineInterface, args: string) => {
   }
 
   if (verb === 'reset') {
-    await update($, ledger, () => EMPTY)
+    await updateLedger($, () => EMPTY)
 
     return '작업 목록을 비웠습니다.'
   }
@@ -762,8 +856,9 @@ export const register: Register = on => {
       argumentHint: '[done|drop <번호> | whip | clear | reset]',
       immediate: true,
     })
+    await restoreLedger($)
     // 이전 버전에서 끝난 채 남은 스스로 작업을 치운다
-    await update($, ledger, state =>
+    await updateLedger($, state =>
       state.tasks.some(isFinishedSelf) ? { ...state, tasks: state.tasks.filter(task => !isFinishedSelf(task)) } : state,
     )
 
@@ -782,7 +877,7 @@ export const register: Register = on => {
     const at = await $.clock.now()
     let logged: { id: number; state: Ledger } | undefined
 
-    await update($, ledger, state => {
+    await updateLedger($, state => {
       const message: Message = {
         id: state.nextMessageId,
         text: clip(text, MAX_MESSAGE_CHARS),
@@ -825,7 +920,7 @@ export const register: Register = on => {
     let applied: Applied = { state: EMPTY, notes: [] }
     let wasEmpty = false
 
-    await update($, ledger, state => {
+    await updateLedger($, state => {
       wasEmpty = state.tasks.length === 0
       applied = ops.reduce((acc, op) => applyOp(acc, op, at), { state, notes: [] as string[] })
 
